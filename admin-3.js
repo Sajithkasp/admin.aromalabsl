@@ -902,6 +902,169 @@ function PagesManager({ showMsg, pages, setPages }) {
 }
 
 // ============================================================
+// CONTENT — LIFESTYLE MANAGER
+// ============================================================
+
+function LifestyleManager({ showMsg }) {
+  const [images, setImages] = useState([]);
+  const [details, setDetails] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { loadLifestyle(); }, []);
+
+  async function loadLifestyle() {
+    setLoading(true);
+    try {
+      const { data, error } = await window.supabaseClient
+        .from('site_settings')
+        .select('lifestyle_images, lifestyle_details')
+        .eq('id', 1)
+        .single();
+      
+      if (!error && data) {
+        setImages(data.lifestyle_images || []);
+        setDetails(data.lifestyle_details || []);
+      }
+    } catch (e) {
+      showMsg('❌ Error: ' + e.message);
+    }
+    setLoading(false);
+  }
+
+  async function saveSiteSettings(newImages, newDetails) {
+    try {
+      const { error } = await window.supabaseClient.from('site_settings').update({
+        lifestyle_images: newImages,
+        lifestyle_details: newDetails,
+        updated_at: new Date().toISOString()
+      }).eq('id', 1);
+      if (error) throw error;
+    } catch (err) {
+      throw err;
+    }
+  }
+
+  async function handleUpload(file) {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fileName = `lifestyle-${Date.now()}-${file.name.replace(/\s/g, '-')}`;
+      const { error: uploadErr } = await window.supabaseClient.storage
+        .from('product-images')
+        .upload(fileName, file);
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = window.supabaseClient.storage
+        .from('product-images')
+        .getPublicUrl(fileName);
+
+      const newUrl = urlData.publicUrl;
+      const newImages = [...images, newUrl];
+      const newDetail = {
+        eyebrow: "NEW COLLECTION",
+        title: "New Fragrance,",
+        titleAccent: "& elegant.",
+        description: "Discover our latest addition.",
+        image: newUrl
+      };
+      const newDetails = [...details, newDetail];
+
+      setImages(newImages);
+      setDetails(newDetails);
+      await saveSiteSettings(newImages, newDetails);
+      showMsg('✅ Image uploaded!');
+    } catch (err) {
+      showMsg('❌ Upload error: ' + err.message);
+    }
+    setUploading(false);
+  }
+
+  async function handleDelete(index) {
+    if (!window.confirm('Delete this Lifestyle Image?')) return;
+    try {
+      const newImages = images.filter((_, i) => i !== index);
+      const newDetails = details.filter((_, i) => i !== index);
+      setImages(newImages);
+      setDetails(newDetails);
+      await saveSiteSettings(newImages, newDetails);
+      showMsg('🗑️ Deleted');
+    } catch (e) {
+      showMsg('❌ Error: ' + e.message);
+    }
+  }
+
+  function updateDetail(index, field, value) {
+    setDetails(details.map((d, i) => i === index ? { ...d, [field]: value } : d));
+  }
+
+  async function handleSaveDetails() {
+    try {
+      await saveSiteSettings(images, details);
+      showMsg('✅ Lifestyle details saved!');
+    } catch (e) {
+      showMsg('❌ Error: ' + e.message);
+    }
+  }
+
+  if (loading) return <div className="adm-loading">Loading...</div>;
+
+  return (
+    <div>
+      <h3 className="adm-section-title">📸 Lifestyle Images & Details ({details.length})</h3>
+      <p className="adm-hint">මේ images main site එකේ Lifestyle section එකේ පෙන්නනවා.</p>
+
+      <div style={{ marginBottom: '20px' }}>
+        <label className="adm-upload-label">
+          {uploading ? 'Uploading...' : '📤 Add Lifestyle Image'}
+          <input type="file" accept="image/*" style={{ display: 'none' }}
+            onChange={(e) => handleUpload(e.target.files[0])} />
+        </label>
+      </div>
+
+      {details.length === 0 ? (
+        <div className="adm-empty"><p>No lifestyle images yet. Upload your first one.</p></div>
+      ) : (
+        details.map((detail, i) => (
+          <div key={i} className="adm-lifestyle-item" 
+            style={{ border: '1px solid #eee', borderRadius: '10px', padding: '15px', marginBottom: '15px', background: '#fff' }}>
+            <img src={detail.image} alt={'Lifestyle ' + (i + 1)} 
+              style={{ width: '100%', maxWidth: '300px', borderRadius: '8px', marginBottom: '10px' }} />
+            <div className="adm-form-grid">
+              <input type="text" placeholder="Eyebrow" value={detail.eyebrow || ''}
+                onChange={(e) => updateDetail(i, 'eyebrow', e.target.value)} 
+                className="adm-input adm-input-full" />
+              <input type="text" placeholder="Title" value={detail.title || ''}
+                onChange={(e) => updateDetail(i, 'title', e.target.value)} 
+                className="adm-input" />
+              <input type="text" placeholder="Title Accent" value={detail.titleAccent || ''}
+                onChange={(e) => updateDetail(i, 'titleAccent', e.target.value)} 
+                className="adm-input" />
+              <textarea placeholder="Description" value={detail.description || ''}
+                onChange={(e) => updateDetail(i, 'description', e.target.value)}
+                className="adm-input adm-input-full" 
+                style={{ minHeight: '60px' }}></textarea>
+            </div>
+            <button onClick={() => handleDelete(i)} 
+              className="adm-btn adm-btn-delete" 
+              style={{ marginTop: '10px' }}>
+              🗑️ Delete Image
+            </button>
+          </div>
+        ))
+      )}
+
+      {details.length > 0 && (
+        <button onClick={handleSaveDetails} 
+          className="adm-btn adm-btn-primary" 
+          style={{ marginTop: '20px' }}>
+          💾 Save Lifestyle Details
+        </button>
+      )}
+    </div>
+  );
+              }
+// ============================================================
 // CONTENT — BOT SETTINGS
 // ============================================================
 
@@ -1093,13 +1256,14 @@ function AdminApp() {
 
   // Site content group tabs
   const contentTabs = [
-    { id: 'products', label: '📦 Products' },
-    { id: 'categories', label: '🏷️ Categories' },
-    { id: 'types', label: '🎁 Types' },
-    { id: 'payments', label: '💳 Payments' },
-    { id: 'pages', label: '📄 Pages' },
-    { id: 'bot', label: '🤖 Chat Bot' }
-  ];
+  { id: 'products', label: '📦 Products' },
+  { id: 'categories', label: '🏷️ Categories' },
+  { id: 'lifestyle', label: '📸 Lifestyle' },
+  { id: 'types', label: '🎁 Types' },
+  { id: 'payments', label: '💳 Payments' },
+  { id: 'pages', label: '📄 Pages' },
+  { id: 'bot', label: '🤖 Chat Bot' }
+];
 
   const tabs = activeGroup === 'business' ? businessTabs : contentTabs;
 
@@ -1232,6 +1396,9 @@ function AdminApp() {
             placeholder="New category..."
           />
         )}
+         {activeTab === 'lifestyle' && (
+  <LifestyleManager showMsg={showMsg} />
+)}
         {activeTab === 'types' && (
           <ListManagerTab
             title="Product Types"
