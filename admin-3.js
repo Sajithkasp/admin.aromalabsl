@@ -380,8 +380,7 @@ function CommissionsTab({ showMsg }) {
       </div>
     </div>
   );
-}
-
+        }
 // ============================================================
 // SETTINGS — PRODUCT COSTS
 // ============================================================
@@ -541,7 +540,7 @@ function ProductCostsTab({ showMsg, costTypes }) {
 }
 
 // ============================================================
-// SETTINGS — SIMPLE LIST MANAGER (Cost Types, Categories, etc.)
+// SETTINGS — SIMPLE LIST MANAGER
 // ============================================================
 
 function ListManagerTab({ title, hint, items, onAdd, onDelete, showMsg, placeholder }) {
@@ -921,7 +920,7 @@ function LifestyleManager({ showMsg }) {
         .select('lifestyle_images, lifestyle_details')
         .eq('id', 1)
         .single();
-      
+
       if (!error && data) {
         setImages(data.lifestyle_images || []);
         setDetails(data.lifestyle_details || []);
@@ -933,16 +932,12 @@ function LifestyleManager({ showMsg }) {
   }
 
   async function saveSiteSettings(newImages, newDetails) {
-    try {
-      const { error } = await window.supabaseClient.from('site_settings').update({
-        lifestyle_images: newImages,
-        lifestyle_details: newDetails,
-        updated_at: new Date().toISOString()
-      }).eq('id', 1);
-      if (error) throw error;
-    } catch (err) {
-      throw err;
-    }
+    const { error } = await window.supabaseClient.from('site_settings').update({
+      lifestyle_images: newImages,
+      lifestyle_details: newDetails,
+      updated_at: new Date().toISOString()
+    }).eq('id', 1);
+    if (error) throw error;
   }
 
   async function handleUpload(file) {
@@ -1026,27 +1021,27 @@ function LifestyleManager({ showMsg }) {
         <div className="adm-empty"><p>No lifestyle images yet. Upload your first one.</p></div>
       ) : (
         details.map((detail, i) => (
-          <div key={i} className="adm-lifestyle-item" 
+          <div key={i} className="adm-lifestyle-item"
             style={{ border: '1px solid #eee', borderRadius: '10px', padding: '15px', marginBottom: '15px', background: '#fff' }}>
-            <img src={detail.image} alt={'Lifestyle ' + (i + 1)} 
+            <img src={detail.image} alt={'Lifestyle ' + (i + 1)}
               style={{ width: '100%', maxWidth: '300px', borderRadius: '8px', marginBottom: '10px' }} />
             <div className="adm-form-grid">
               <input type="text" placeholder="Eyebrow" value={detail.eyebrow || ''}
-                onChange={(e) => updateDetail(i, 'eyebrow', e.target.value)} 
+                onChange={(e) => updateDetail(i, 'eyebrow', e.target.value)}
                 className="adm-input adm-input-full" />
               <input type="text" placeholder="Title" value={detail.title || ''}
-                onChange={(e) => updateDetail(i, 'title', e.target.value)} 
+                onChange={(e) => updateDetail(i, 'title', e.target.value)}
                 className="adm-input" />
               <input type="text" placeholder="Title Accent" value={detail.titleAccent || ''}
-                onChange={(e) => updateDetail(i, 'titleAccent', e.target.value)} 
+                onChange={(e) => updateDetail(i, 'titleAccent', e.target.value)}
                 className="adm-input" />
               <textarea placeholder="Description" value={detail.description || ''}
                 onChange={(e) => updateDetail(i, 'description', e.target.value)}
-                className="adm-input adm-input-full" 
+                className="adm-input adm-input-full"
                 style={{ minHeight: '60px' }}></textarea>
             </div>
-            <button onClick={() => handleDelete(i)} 
-              className="adm-btn adm-btn-delete" 
+            <button onClick={() => handleDelete(i)}
+              className="adm-btn adm-btn-delete"
               style={{ marginTop: '10px' }}>
               🗑️ Delete Image
             </button>
@@ -1055,15 +1050,16 @@ function LifestyleManager({ showMsg }) {
       )}
 
       {details.length > 0 && (
-        <button onClick={handleSaveDetails} 
-          className="adm-btn adm-btn-primary" 
+        <button onClick={handleSaveDetails}
+          className="adm-btn adm-btn-primary"
           style={{ marginTop: '20px' }}>
           💾 Save Lifestyle Details
         </button>
       )}
     </div>
   );
-              }
+}
+
 // ============================================================
 // CONTENT — BOT SETTINGS
 // ============================================================
@@ -1122,7 +1118,6 @@ function AdminApp() {
   const [activeTab, setActiveTab] = useState('orders');
   const [message, setMessage] = useState('');
 
-  // Orders
   const [pendingOrders, setPendingOrders] = useState([]);
   const [completedOrders, setCompletedOrders] = useState([]);
   const [cancelledOrders, setCancelledOrders] = useState([]);
@@ -1130,7 +1125,6 @@ function AdminApp() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [ordersSubTab, setOrdersSubTab] = useState('pending');
 
-  // Dynamic data
   const [costTypes, setCostTypes] = useState([]);
   const [paymentMethods, setPaymentMethods] = useState([]);
   const [deliverySettings, setDeliverySettings] = useState({ base_charge: 350, free_delivery_threshold: 3 });
@@ -1144,19 +1138,34 @@ function AdminApp() {
     setTimeout(() => setMessage(''), 3000);
   }
 
-  // Auth check
   useEffect(() => {
     async function check() {
-      const session = await getSession();
-      if (session && session.user && session.user.email === ADMIN_EMAIL) {
+      const result = await checkAdminSession();
+      if (result.authenticated) {
         setIsAuthenticated(true);
       }
       setAuthChecked(true);
     }
     check();
+
+    const { data: listener } = sb.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session && session.user) {
+        if (session.user.email === ADMIN_EMAIL) {
+          setIsAuthenticated(true);
+        } else {
+          sb.auth.signOut();
+        }
+      }
+      if (event === 'SIGNED_OUT') {
+        setIsAuthenticated(false);
+      }
+    });
+
+    return () => {
+      if (listener && listener.subscription) listener.subscription.unsubscribe();
+    };
   }, []);
 
-  // Load all data when authenticated
   useEffect(() => {
     if (!isAuthenticated) return;
     loadAllData();
@@ -1196,44 +1205,19 @@ function AdminApp() {
     setOrdersLoading(false);
   }
 
-  async function loadCostTypes() {
-    const d = await dbGetCostTypes();
-    setCostTypes(d);
-  }
-  async function loadPaymentMethods() {
-    const d = await dbGetPaymentMethods();
-    setPaymentMethods(d);
-  }
-  async function loadDelivery() {
-    const d = await dbGetDeliverySettings();
-    setDeliverySettings(d);
-  }
-  async function loadCategories() {
-    const d = await dbGetCategories();
-    setCategories(d);
-  }
-  async function loadProductTypes() {
-    const d = await dbGetProductTypes();
-    setProductTypes(d);
-  }
-  async function loadProducts() {
-    const d = await dbGetProducts();
-    setProducts(d);
-  }
-  async function loadPages() {
-    const d = await dbGetPages();
-    setPages(d);
-  }
+  async function loadCostTypes() { const d = await dbGetCostTypes(); setCostTypes(d); }
+  async function loadPaymentMethods() { const d = await dbGetPaymentMethods(); setPaymentMethods(d); }
+  async function loadDelivery() { const d = await dbGetDeliverySettings(); setDeliverySettings(d); }
+  async function loadCategories() { const d = await dbGetCategories(); setCategories(d); }
+  async function loadProductTypes() { const d = await dbGetProductTypes(); setProductTypes(d); }
+  async function loadProducts() { const d = await dbGetProducts(); setProducts(d); }
+  async function loadPages() { const d = await dbGetPages(); setPages(d); }
 
   async function handleLogout() {
     if (!window.confirm('Log out from admin panel?')) return;
     await signOutAdmin();
-    window.location.reload();
+    setIsAuthenticated(false);
   }
-
-  // ============================================================
-  // RENDER
-  // ============================================================
 
   if (!authChecked) {
     return <div className="adm-loading" style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Loading...</div>;
@@ -1243,7 +1227,6 @@ function AdminApp() {
     return <LoginScreen onSuccess={() => setIsAuthenticated(true)} />;
   }
 
-  // Business group tabs
   const businessTabs = [
     { id: 'orders', label: '📦 Orders', badge: pendingOrders.length },
     { id: 'pnl', label: '📈 PnL Report' },
@@ -1254,16 +1237,15 @@ function AdminApp() {
     { id: 'delivery', label: '🚚 Delivery' }
   ];
 
-  // Site content group tabs
   const contentTabs = [
-  { id: 'products', label: '📦 Products' },
-  { id: 'categories', label: '🏷️ Categories' },
-  { id: 'lifestyle', label: '📸 Lifestyle' },
-  { id: 'types', label: '🎁 Types' },
-  { id: 'payments', label: '💳 Payments' },
-  { id: 'pages', label: '📄 Pages' },
-  { id: 'bot', label: '🤖 Chat Bot' }
-];
+    { id: 'products', label: '📦 Products' },
+    { id: 'categories', label: '🏷️ Categories' },
+    { id: 'lifestyle', label: '📸 Lifestyle' },
+    { id: 'types', label: '🎁 Types' },
+    { id: 'payments', label: '💳 Payments' },
+    { id: 'pages', label: '📄 Pages' },
+    { id: 'bot', label: '🤖 Chat Bot' }
+  ];
 
   const tabs = activeGroup === 'business' ? businessTabs : contentTabs;
 
@@ -1381,7 +1363,6 @@ function AdminApp() {
             showMsg={showMsg}
           />
         )}
-
         {activeTab === 'products' && (
           <ProductsManager showMsg={showMsg} categories={categories} productTypes={productTypes} products={products} setProducts={setProducts} />
         )}
@@ -1396,9 +1377,9 @@ function AdminApp() {
             placeholder="New category..."
           />
         )}
-         {activeTab === 'lifestyle' && (
-  <LifestyleManager showMsg={showMsg} />
-)}
+        {activeTab === 'lifestyle' && (
+          <LifestyleManager showMsg={showMsg} />
+        )}
         {activeTab === 'types' && (
           <ListManagerTab
             title="Product Types"
