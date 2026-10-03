@@ -48,7 +48,7 @@ function todayStr() {
 }
 
 // ============================================================
-// AUTH
+// AUTH — PASSWORD
 // ============================================================
 
 async function getSession() {
@@ -67,6 +67,38 @@ async function signInAdmin(password) {
   });
   if (error) throw error;
   return data;
+}
+
+// ============================================================
+// AUTH — GOOGLE OAUTH
+// ============================================================
+
+async function signInWithGoogle() {
+  const { data, error } = await sb.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: window.location.origin
+    }
+  });
+  if (error) throw error;
+  return data;
+}
+
+async function checkAdminSession() {
+  try {
+    const { data } = await sb.auth.getSession();
+    if (data.session && data.session.user) {
+      if (data.session.user.email === ADMIN_EMAIL) {
+        return { authenticated: true, user: data.session.user };
+      } else {
+        await sb.auth.signOut();
+        return { authenticated: false, error: 'Unauthorized email: ' + data.session.user.email };
+      }
+    }
+    return { authenticated: false };
+  } catch (e) {
+    return { authenticated: false, error: e.message };
+  }
 }
 
 async function signOutAdmin() {
@@ -484,4 +516,4 @@ async function cancelOrder(orderId) {
     status: 'Cancelled',
     updated_at: new Date().toISOString()
   });
-                                        }
+                                                       }
