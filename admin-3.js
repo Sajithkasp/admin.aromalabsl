@@ -1,10 +1,8 @@
 /*************************************************************
  * AROMA LAB — Admin Panel: PnL + Settings + Content + Main App
  * File: admin-3.js
- * Domain: admin.aromalabsl.lk
+ * Version: 5.0 (With Hero Manager)
  *************************************************************/
-
-var { useState, useEffect } = React;
 
 // ============================================================
 // PNL REPORT TAB
@@ -386,6 +384,257 @@ function CommissionsTab({ showMsg }) {
 }
 
 // ============================================================
+// HERO MANAGER (NEW — Hero Images Management)
+// ============================================================
+
+function HeroManager({ showMsg }) {
+  const [heroImages, setHeroImages] = useState([]);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => { loadHeroImages(); }, []);
+
+  async function loadHeroImages() {
+    setLoading(true);
+    try {
+      const { data, error } = await window.supabaseClient
+        .from('site_settings')
+        .select('hero_images')
+        .eq('id', 1)
+        .single();
+
+      if (!error && data && data.hero_images) {
+        setHeroImages(data.hero_images);
+      }
+    } catch (e) {
+      showMsg('❌ Error: ' + e.message);
+    }
+    setLoading(false);
+  }
+
+  async function saveHeroImages(newImages) {
+    const { error } = await window.supabaseClient.from('site_settings').update({
+      hero_images: newImages,
+      updated_at: new Date().toISOString()
+    }).eq('id', 1);
+    if (error) throw error;
+  }
+
+  async function handleUpload(file) {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fileName = `hero-${Date.now()}-${file.name.replace(/\s/g, '-')}`;
+      const { error: uploadErr } = await window.supabaseClient.storage
+        .from('product-images')
+        .upload(fileName, file);
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = window.supabaseClient.storage
+        .from('product-images')
+        .getPublicUrl(fileName);
+
+      const newUrl = urlData.publicUrl;
+      const newImages = [...heroImages, newUrl];
+
+      setHeroImages(newImages);
+      await saveHeroImages(newImages);
+      showMsg('✅ Hero image uploaded!');
+    } catch (err) {
+      showMsg('❌ Upload error: ' + err.message);
+    }
+    setUploading(false);
+  }
+
+  async function handleDelete(index) {
+    if (!window.confirm('Delete this Hero Image?')) return;
+    try {
+      const newImages = heroImages.filter((_, i) => i !== index);
+      setHeroImages(newImages);
+      await saveHeroImages(newImages);
+      if (currentIndex >= newImages.length && newImages.length > 0) {
+        setCurrentIndex(newImages.length - 1);
+      }
+      showMsg('🗑️ Deleted');
+    } catch (e) {
+      showMsg('❌ Error: ' + e.message);
+    }
+  }
+
+  async function handleMove(index, direction) {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= heroImages.length) return;
+    const newImages = [...heroImages];
+    [newImages[index], newImages[newIndex]] = [newImages[newIndex], newImages[index]];
+    setHeroImages(newImages);
+    await saveHeroImages(newImages);
+    showMsg('✅ Order updated');
+  }
+
+  async function handleMakePrimary(index) {
+    if (index === 0) return;
+    const newImages = [...heroImages];
+    const [item] = newImages.splice(index, 1);
+    newImages.unshift(item);
+    setHeroImages(newImages);
+    setCurrentIndex(0);
+    await saveHeroImages(newImages);
+    showMsg('⭐ Made primary');
+  }
+
+  if (loading) return <div className="adm-loading">Loading...</div>;
+
+  const currentImage = heroImages[currentIndex] || '';
+
+  return (
+    <div className="adm-hero">
+      <h3 className="adm-section-title">🎨 Hero Images Manager</h3>
+      <p className="adm-hint">
+        Main site එකේ Hero section එකේ images manage කරන්න. මේ images auto-slide වෙනවා (5s).
+      </p>
+
+      {/* Preview Simulator */}
+      {heroImages.length > 0 && (
+        <div className="adm-hero-simulator">
+          <div className="adm-hero-slide" style={{ opacity: 1 }}>
+            <img src={currentImage} alt="Hero Preview" />
+            <div className="adm-hero-overlay">
+              <div className="adm-hero-overlay-content">
+                <div className="adm-hero-tag">PREMIUM EAU DE PARFUM</div>
+                <h2 className="adm-hero-title">
+                  AROMA LAB - Fine Fragrances<br />
+                  <em>Crafted for Every Mood & Moment</em>
+                </h2>
+                <p className="adm-hero-desc">
+                  From bold and mysterious to fresh and elegant — find your perfect scent.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {heroImages.length > 1 && (
+            <>
+              <button
+                className="adm-hero-nav-arrow prev"
+                onClick={() => setCurrentIndex(prev => (prev - 1 + heroImages.length) % heroImages.length)}
+                aria-label="Previous"
+              >
+                ‹
+              </button>
+              <button
+                className="adm-hero-nav-arrow next"
+                onClick={() => setCurrentIndex(prev => (prev + 1) % heroImages.length)}
+                aria-label="Next"
+              >
+                ›
+              </button>
+
+              <div className="adm-hero-dots">
+                {heroImages.map((_, i) => (
+                  <button
+                    key={i}
+                    className={'adm-hero-dot ' + (i === currentIndex ? 'active' : '')}
+                    onClick={() => setCurrentIndex(i)}
+                    aria-label={'Slide ' + (i + 1)}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Upload Box */}
+      <div className="adm-hero-controls">
+        <label className="adm-hero-upload-box">
+          <div className="adm-hero-upload-icon">📤</div>
+          <div className="adm-hero-upload-text">
+            {uploading ? 'Uploading...' : 'Upload New Hero Image'}
+          </div>
+          <div className="adm-hero-upload-hint">
+            Recommended: 1920x1080 or higher • JPG/PNG • Max 5MB
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            onChange={(e) => handleUpload(e.target.files[0])}
+            disabled={uploading}
+          />
+        </label>
+      </div>
+
+      {/* Images Grid */}
+      {heroImages.length === 0 ? (
+        <div className="adm-empty">
+          <p>No hero images yet. Upload your first one above.</p>
+        </div>
+      ) : (
+        <>
+          <h4 className="adm-section-title" style={{ fontSize: '18px', marginTop: '8px' }}>
+            All Hero Images ({heroImages.length})
+          </h4>
+          <div className="adm-hero-grid">
+            {heroImages.map((img, i) => (
+              <div key={i} className={'adm-hero-card ' + (i === 0 ? 'primary' : '')}>
+                <div className="adm-hero-card-img-wrap">
+                  <img src={img} alt={'Hero ' + (i + 1)} />
+                  {i === 0 && <div className="adm-hero-primary-badge">⭐ PRIMARY</div>}
+                </div>
+                <div className="adm-hero-card-body">
+                  <div className="adm-hero-card-name">
+                    Image #{i + 1}
+                  </div>
+                  <div className="adm-hero-card-actions">
+                    <button
+                      className="adm-btn adm-btn-secondary"
+                      style={{ padding: '6px 10px', fontSize: '11px' }}
+                      onClick={() => handleMove(i, -1)}
+                      disabled={i === 0}
+                      title="Move Up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      className="adm-btn adm-btn-secondary"
+                      style={{ padding: '6px 10px', fontSize: '11px' }}
+                      onClick={() => handleMove(i, 1)}
+                      disabled={i === heroImages.length - 1}
+                      title="Move Down"
+                    >
+                      ↓
+                    </button>
+                    {i !== 0 && (
+                      <button
+                        className="adm-btn adm-btn-gold"
+                        style={{ padding: '6px 10px', fontSize: '11px' }}
+                        onClick={() => handleMakePrimary(i)}
+                        title="Make Primary"
+                      >
+                        ⭐
+                      </button>
+                    )}
+                    <button
+                      className="adm-btn adm-btn-delete"
+                      style={{ padding: '6px 10px', fontSize: '11px' }}
+                      onClick={() => handleDelete(i)}
+                      title="Delete"
+                    >
+                      🗑️
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // SETTINGS — PRODUCT COSTS
 // ============================================================
 
@@ -652,306 +901,6 @@ function DeliverySettingsTab({ deliverySettings, setDeliverySettings, showMsg })
 }
 
 // ============================================================
-// CONTENT — HERO BANNER MANAGER (WITH LIVE SLIDER & UPLOAD)
-// ============================================================
-
-function HeroManager({ showMsg }) {
-  const [heroImages, setHeroImages] = useState([]);
-  const [uploading, setUploading] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [customUrl, setCustomUrl] = useState('');
-
-  const DEFAULT_HERO = "https://sajithkasp.github.io/aroma-labsl/hero.jpg";
-
-  useEffect(() => { loadHeroImages(); }, []);
-
-  async function loadHeroImages() {
-    setLoading(true);
-    try {
-      const { data, error } = await window.supabaseClient
-        .from('site_settings')
-        .select('hero_images')
-        .eq('id', 1)
-        .maybeSingle();
-
-      if (!error && data && data.hero_images && data.hero_images.length > 0) {
-        setHeroImages(data.hero_images);
-      } else {
-        setHeroImages([DEFAULT_HERO]);
-      }
-    } catch (e) {
-      showMsg('❌ Error: ' + e.message);
-      setHeroImages([DEFAULT_HERO]);
-    }
-    setLoading(false);
-  }
-
-  async function saveHeroImages(newImages) {
-    const { error } = await window.supabaseClient.from('site_settings').upsert({
-      id: 1,
-      hero_images: newImages,
-      updated_at: new Date().toISOString()
-    }, { onConflict: 'id' });
-    if (error) throw error;
-  }
-
-  async function handleUpload(file) {
-    if (!file) return;
-    setUploading(true);
-    try {
-      const fileName = `hero-${Date.now()}-${file.name.replace(/\s/g, '-')}`;
-      const { error: uploadErr } = await window.supabaseClient.storage
-        .from('product-images')
-        .upload(fileName, file, { upsert: true });
-      if (uploadErr) throw uploadErr;
-
-      const { data: urlData } = window.supabaseClient.storage
-        .from('product-images')
-        .getPublicUrl(fileName);
-
-      const newUrl = urlData.publicUrl;
-      const cleanExisting = heroImages.filter(img => img !== DEFAULT_HERO);
-      const newImages = [...cleanExisting, newUrl];
-
-      setHeroImages(newImages);
-      await saveHeroImages(newImages);
-      showMsg('✅ Hero image uploaded and saved!');
-    } catch (err) {
-      showMsg('❌ Upload error: ' + err.message);
-    }
-    setUploading(false);
-  }
-
-  async function handleAddUrl() {
-    if (!customUrl.trim()) return;
-    try {
-      const url = customUrl.trim();
-      const cleanExisting = heroImages.filter(img => img !== DEFAULT_HERO);
-      const newImages = [...cleanExisting, url];
-      setHeroImages(newImages);
-      await saveHeroImages(newImages);
-      setCustomUrl('');
-      showMsg('✅ Hero image URL added!');
-    } catch (e) {
-      showMsg('❌ Error: ' + e.message);
-    }
-  }
-
-  async function handleDelete(index) {
-    if (!window.confirm('Delete this Hero image?')) return;
-    try {
-      let newImages = heroImages.filter((_, i) => i !== index);
-      if (newImages.length === 0) newImages = [DEFAULT_HERO];
-      setHeroImages(newImages);
-      await saveHeroImages(newImages);
-      showMsg('🗑️ Hero image deleted');
-    } catch (e) {
-      showMsg('❌ Error: ' + e.message);
-    }
-  }
-
-  async function handleSetAsFirst(index) {
-    if (index === 0) return;
-    try {
-      const item = heroImages[index];
-      const newImages = [item, ...heroImages.filter((_, i) => i !== index)];
-      setHeroImages(newImages);
-      await saveHeroImages(newImages);
-      showMsg('⭐ Set as Primary Hero Image!');
-    } catch (e) {
-      showMsg('❌ Error: ' + e.message);
-    }
-  }
-
-  async function handleResetDefault() {
-    if (!window.confirm('Reset to Default AROMA LAB Hero Banner?')) return;
-    try {
-      const newImages = [DEFAULT_HERO];
-      setHeroImages(newImages);
-      await saveHeroImages(newImages);
-      showMsg('🔄 Reset to default hero image');
-    } catch (e) {
-      showMsg('❌ Error: ' + e.message);
-    }
-  }
-
-  const [previewIndex, setPreviewIndex] = useState(0);
-
-  // Auto-rotate simulator
-  useEffect(() => {
-    if (heroImages.length <= 1) return;
-    const timer = setInterval(() => {
-      setPreviewIndex(prev => (prev + 1) % heroImages.length);
-    }, 4500);
-    return () => clearInterval(timer);
-  }, [heroImages.length]);
-
-  if (loading) return <div className="adm-loading">Loading Hero images...</div>;
-
-  return (
-    <div className="adm-hero">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h3 className="adm-section-title">🖼️ Hero Banner Showcase ({heroImages.length})</h3>
-          <p className="adm-hint">
-            මේ image එක aromalabsl.lk main website එකේ මුල් පිටුවේ banner එක විදිහට පේනවා. එකකට වඩා දැම්මොත් slider එකක් විදිහට auto rotate වෙනවා.
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button onClick={handleResetDefault} className="adm-btn adm-btn-secondary" style={{ fontSize: '12px', padding: '8px 14px' }}>
-            🔄 Reset Default
-          </button>
-        </div>
-      </div>
-
-      {/* Interactive Widescreen Simulator */}
-      <div className="adm-hero-simulator">
-        {heroImages.map((img, idx) => (
-          <div
-            key={idx}
-            className="adm-hero-slide"
-            style={{ opacity: idx === previewIndex ? 1 : 0, zIndex: idx === previewIndex ? 2 : 1 }}
-          >
-            <img
-              src={img}
-              alt={`Hero Slide ${idx + 1}`}
-              onError={(e) => { e.target.src = DEFAULT_HERO; }}
-            />
-            <div className="adm-hero-overlay">
-              <div className="adm-hero-overlay-content">
-                <span className="adm-hero-tag">AROMA LAB ATELIER · SLIDE {idx + 1} OF {heroImages.length}</span>
-                <h2 className="adm-hero-title">
-                  Pure Sillage, <em>Bespoke Aura</em>
-                </h2>
-                <p className="adm-hero-desc">
-                  Artisanal Haute Parfumerie meticulously formulated with rare essences. Live storefront preview simulator.
-                </p>
-                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                  <span style={{ padding: '8px 18px', background: '#D4AF37', color: '#041A12', fontWeight: '800', fontSize: '11px', letterSpacing: '0.1em', borderRadius: '4px', textTransform: 'uppercase' }}>
-                    Shop Flacons
-                  </span>
-                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.7)' }}>
-                    {idx === 0 ? '⭐ Primary Banner' : `Slide #${idx + 1}`}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-
-        {heroImages.length > 1 && (
-          <>
-            <button
-              className="adm-hero-nav-arrow prev"
-              onClick={() => setPreviewIndex((previewIndex - 1 + heroImages.length) % heroImages.length)}
-              title="Previous"
-            >
-              ‹
-            </button>
-            <button
-              className="adm-hero-nav-arrow next"
-              onClick={() => setPreviewIndex((previewIndex + 1) % heroImages.length)}
-              title="Next"
-            >
-              ›
-            </button>
-            <div className="adm-hero-dots">
-              {heroImages.map((_, i) => (
-                <div
-                  key={i}
-                  className={'adm-hero-dot ' + (i === previewIndex ? 'active' : '')}
-                  onClick={() => setPreviewIndex(i)}
-                />
-              ))}
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* Luxury Upload & URL Controls */}
-      <div className="adm-hero-controls">
-        <label className="adm-hero-upload-box">
-          <input
-            type="file"
-            accept="image/*"
-            style={{ display: 'none' }}
-            disabled={uploading}
-            onChange={(e) => handleUpload(e.target.files[0])}
-          />
-          <div className="adm-hero-upload-icon">{uploading ? '⏳' : '📤'}</div>
-          <div className="adm-hero-upload-text">
-            {uploading ? 'Uploading to Supabase...' : 'Click to Upload High-Res Campaign Banner'}
-          </div>
-          <div className="adm-hero-upload-hint">
-            Supports JPG, WEBP, PNG · Recommended 1920x800 for optimal desktop & mobile display
-          </div>
-        </label>
-
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <input
-            type="url"
-            placeholder="Or paste direct image URL (https://...)"
-            value={customUrl}
-            onChange={(e) => setCustomUrl(e.target.value)}
-            className="adm-input"
-            style={{ flex: 1, minWidth: '280px', padding: '12px 16px' }}
-          />
-          <button onClick={handleAddUrl} className="adm-btn adm-btn-primary">
-            ➕ Add Image URL
-          </button>
-        </div>
-      </div>
-
-      {/* Grid of Existing Hero Slides */}
-      <div className="adm-hero-grid">
-        {heroImages.map((img, i) => (
-          <div key={i} className={'adm-hero-card ' + (i === 0 ? 'primary' : '')}>
-            <div className="adm-hero-card-img-wrap">
-              <img
-                src={img}
-                alt={`Hero ${i + 1}`}
-                onError={(e) => { e.target.src = DEFAULT_HERO; }}
-              />
-              {i === 0 && (
-                <span className="adm-hero-primary-badge">
-                  ⭐ Primary Hero Banner
-                </span>
-              )}
-            </div>
-
-            <div className="adm-hero-card-body">
-              <span className="adm-hero-card-name" title={img}>
-                {img.substring(img.lastIndexOf('/') + 1) || `Hero Banner #${i + 1}`}
-              </span>
-              <div className="adm-hero-card-actions">
-                {i !== 0 && (
-                  <button
-                    onClick={() => handleSetAsFirst(i)}
-                    className="adm-btn adm-btn-secondary"
-                    style={{ padding: '6px 10px', fontSize: '11px' }}
-                    title="Set as 1st Banner"
-                  >
-                    ⭐ Make 1st
-                  </button>
-                )}
-                <button
-                  onClick={() => handleDelete(i)}
-                  className="adm-btn adm-btn-delete"
-                  style={{ padding: '6px 10px', fontSize: '11px' }}
-                  title="Remove this hero image"
-                >
-                  🗑️ Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================
 // CONTENT — PRODUCTS MANAGER
 // ============================================================
 
@@ -1109,33 +1058,17 @@ function ProductsManager({ showMsg, categories, productTypes, products, setProdu
         </div>
       )}
 
-      <div className="adm-products-grid">
+      <div className="adm-list">
         {products.map(p => (
-          <div key={p.id} className="adm-product-card">
-            <div className="adm-product-img-wrap">
-              <img src={p.image} alt={p.name} onError={(e) => { e.target.src = DEFAULT_HERO; }} />
-              <span className="adm-product-category-badge">{p.category || 'Atelier'}</span>
+          <div key={p.id} className="adm-list-row">
+            <img src={p.image} alt={p.name} className="adm-list-img" />
+            <div className="adm-list-info">
+              <div className="adm-list-name">{p.name}</div>
+              <div className="adm-list-sub">{p.for} • {fmtRs(p.price)}</div>
             </div>
-            <div className="adm-product-body">
-              <div>
-                <h4 className="adm-product-title">{p.name}</h4>
-                <div className="adm-product-price">{fmtRs(p.price)}</div>
-                {(p.top || p.heart || p.base) && (
-                  <div className="adm-notes-wrap">
-                    {p.top && <div className="adm-note-pill"><span>🍋</span> <strong>Top:</strong> {p.top}</div>}
-                    {p.heart && <div className="adm-note-pill"><span>🌹</span> <strong>Heart:</strong> {p.heart}</div>}
-                    {p.base && <div className="adm-note-pill"><span>🪵</span> <strong>Base:</strong> {p.base}</div>}
-                  </div>
-                )}
-              </div>
-              <div className="adm-product-actions">
-                <button onClick={() => editProduct(p)} className="adm-btn adm-btn-secondary" style={{ flex: 1, padding: '8px 12px', fontSize: '12px' }}>
-                  ✏️ Edit Flacon
-                </button>
-                <button onClick={() => handleDelete(p.id)} className="adm-btn adm-btn-delete" style={{ padding: '8px 12px', fontSize: '12px' }}>
-                  🗑️
-                </button>
-              </div>
+            <div className="adm-list-actions">
+              <button onClick={() => editProduct(p)} className="adm-btn adm-btn-primary" style={{ padding: '8px 14px', fontSize: '12px' }}>✏️ Edit</button>
+              <button onClick={() => handleDelete(p.id)} className="adm-btn adm-btn-delete">🗑️</button>
             </div>
           </div>
         ))}
@@ -1239,7 +1172,7 @@ function LifestyleManager({ showMsg }) {
         .from('site_settings')
         .select('lifestyle_images, lifestyle_details')
         .eq('id', 1)
-        .maybeSingle();
+        .single();
 
       if (!error && data) {
         setImages(data.lifestyle_images || []);
@@ -1252,12 +1185,11 @@ function LifestyleManager({ showMsg }) {
   }
 
   async function saveSiteSettings(newImages, newDetails) {
-    const { error } = await window.supabaseClient.from('site_settings').upsert({
-      id: 1,
+    const { error } = await window.supabaseClient.from('site_settings').update({
       lifestyle_images: newImages,
       lifestyle_details: newDetails,
       updated_at: new Date().toISOString()
-    }, { onConflict: 'id' });
+    }).eq('id', 1);
     if (error) throw error;
   }
 
@@ -1268,7 +1200,7 @@ function LifestyleManager({ showMsg }) {
       const fileName = `lifestyle-${Date.now()}-${file.name.replace(/\s/g, '-')}`;
       const { error: uploadErr } = await window.supabaseClient.storage
         .from('product-images')
-        .upload(fileName, file, { upsert: true });
+        .upload(fileName, file);
       if (uploadErr) throw uploadErr;
 
       const { data: urlData } = window.supabaseClient.storage
@@ -1460,58 +1392,40 @@ function AdminApp() {
   }
 
   useEffect(() => {
-    let mounted = true;
-    const safetyTimer = setTimeout(() => {
-      if (mounted) setAuthChecked(true);
-    }, 1200);
-
     async function check() {
-      try {
-        const result = await checkAdminSession();
-        if (mounted && result && result.authenticated) {
-          setIsAuthenticated(true);
-        } else if (mounted) {
-          setIsAuthenticated(false);
-        }
-      } catch (err) {
-        console.warn('Session check warning:', err);
-        if (mounted) setIsAuthenticated(false);
-      } finally {
-        if (mounted) setAuthChecked(true);
-        clearTimeout(safetyTimer);
+      const result = await checkAdminSession();
+      if (result.authenticated) {
+        setIsAuthenticated(true);
       }
+      setAuthChecked(true);
     }
     check();
 
-    if (sb && sb.auth) {
-      const { data: listener } = sb.auth.onAuthStateChange((event, session) => {
-        if (event === 'SIGNED_IN' && session && session.user) {
-          if (session.user.email === ADMIN_EMAIL) {
-            setIsAuthenticated(true);
-          } else {
-            sb.auth.signOut();
-          }
+    const { data: listener } = sb.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session && session.user) {
+        if (session.user.email === ADMIN_EMAIL) {
+          setIsAuthenticated(true);
+        } else {
+          sb.auth.signOut();
         }
-        if (event === 'SIGNED_OUT') {
-          setIsAuthenticated(false);
-        }
-      });
+      }
+      if (event === 'SIGNED_OUT') {
+        setIsAuthenticated(false);
+      }
+    });
 
-      return () => {
-        if (listener && listener.subscription) listener.subscription.unsubscribe();
-      };
-    }
+    return () => {
+      if (listener && listener.subscription) listener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
     loadAllData();
-    if (sb && sb.channel) {
-      const channel = sb.channel('adm-orders-changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => { loadOrders(); })
-        .subscribe();
-      return () => { sb.removeChannel(channel); };
-    }
+    const channel = sb.channel('adm-orders-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => { loadOrders(); })
+      .subscribe();
+    return () => { sb.removeChannel(channel); };
   }, [isAuthenticated]);
 
   async function loadAllData() {
@@ -1577,9 +1491,9 @@ function AdminApp() {
   ];
 
   const contentTabs = [
-    { id: 'hero', label: '🖼️ Hero Banner' },
     { id: 'products', label: '📦 Products' },
     { id: 'categories', label: '🏷️ Categories' },
+    { id: 'hero', label: '🎨 Hero Images' },
     { id: 'lifestyle', label: '📸 Lifestyle' },
     { id: 'types', label: '🎁 Types' },
     { id: 'payments', label: '💳 Payments' },
@@ -1595,17 +1509,11 @@ function AdminApp() {
         <div className="adm-header-left">
           <div className="adm-header-logo">🌸</div>
           <div className="adm-header-text">
-            <h1 className="adm-header-title">
-              AROMA LAB <span className="adm-header-badge">Atelier Admin</span>
-            </h1>
-            <p className="adm-header-sub">Haute Parfumerie · Business & Storefront Suite</p>
+            <h1 className="adm-header-title">AROMA LAB Admin</h1>
+            <p className="adm-header-sub">Business Management Panel</p>
           </div>
         </div>
         <div className="adm-header-right">
-          <div className="adm-user-tag">
-            <span className="status-dot"></span>
-            <span>🔒 sajith.kasp@gmail.com</span>
-          </div>
           <a href={MAIN_SITE_URL} target="_blank" rel="noopener" className="adm-view-site-btn">
             🌐 View Site
           </a>
@@ -1617,16 +1525,16 @@ function AdminApp() {
 
       <div className="adm-groups">
         <button
-          className={'adm-group-btn ' + (activeGroup === 'content' ? 'active' : '')}
-          onClick={() => { setActiveGroup('content'); setActiveTab('hero'); }}
-        >
-          ✨ Atelier & Content
-        </button>
-        <button
           className={'adm-group-btn ' + (activeGroup === 'business' ? 'active' : '')}
           onClick={() => { setActiveGroup('business'); setActiveTab('orders'); }}
         >
-          📊 Business Intelligence
+          📊 Business
+        </button>
+        <button
+          className={'adm-group-btn ' + (activeGroup === 'content' ? 'active' : '')}
+          onClick={() => { setActiveGroup('content'); setActiveTab('products'); }}
+        >
+          🎨 Site Content
         </button>
       </div>
 
@@ -1779,5 +1687,5 @@ function AdminApp() {
 // RENDER
 // ============================================================
 
-var root = ReactDOM.createRoot(document.getElementById('admin-root'));
+const root = ReactDOM.createRoot(document.getElementById('admin-root'));
 root.render(<AdminApp />);
