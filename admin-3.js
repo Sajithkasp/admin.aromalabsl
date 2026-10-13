@@ -901,6 +901,237 @@ function PagesManager({ showMsg, pages, setPages }) {
 }
 
 // ============================================================
+// CONTENT — HERO BANNER MANAGER
+// ============================================================
+
+function HeroManager({ showMsg }) {
+  const [heroImages, setHeroImages] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [customUrl, setCustomUrl] = useState('');
+
+  const DEFAULT_HERO = "https://sajithkasp.github.io/aroma-labsl/hero.jpg";
+
+  useEffect(() => { loadHeroImages(); }, []);
+
+  async function loadHeroImages() {
+    setLoading(true);
+    try {
+      const { data, error } = await window.supabaseClient
+        .from('site_settings')
+        .select('hero_images')
+        .eq('id', 1)
+        .single();
+
+      if (!error && data && data.hero_images && data.hero_images.length > 0) {
+        setHeroImages(data.hero_images);
+      } else {
+        setHeroImages([DEFAULT_HERO]);
+      }
+    } catch (e) {
+      showMsg('❌ Error: ' + e.message);
+      setHeroImages([DEFAULT_HERO]);
+    }
+    setLoading(false);
+  }
+
+  async function saveHeroImages(newImages) {
+    const { error } = await window.supabaseClient.from('site_settings').update({
+      hero_images: newImages,
+      updated_at: new Date().toISOString()
+    }).eq('id', 1);
+    if (error) throw error;
+  }
+
+  async function handleUpload(file) {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const fileName = `hero-${Date.now()}-${file.name.replace(/\s/g, '-')}`;
+      const { error: uploadErr } = await window.supabaseClient.storage
+        .from('product-images')
+        .upload(fileName, file);
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = window.supabaseClient.storage
+        .from('product-images')
+        .getPublicUrl(fileName);
+
+      const newUrl = urlData.publicUrl;
+      const cleanExisting = heroImages.filter(img => img !== DEFAULT_HERO);
+      const newImages = [...cleanExisting, newUrl];
+
+      setHeroImages(newImages);
+      await saveHeroImages(newImages);
+      showMsg('✅ Hero image uploaded and saved!');
+    } catch (err) {
+      showMsg('❌ Upload error: ' + err.message);
+    }
+    setUploading(false);
+  }
+
+  async function handleAddUrl() {
+    if (!customUrl.trim()) return;
+    try {
+      const url = customUrl.trim();
+      const cleanExisting = heroImages.filter(img => img !== DEFAULT_HERO);
+      const newImages = [...cleanExisting, url];
+      setHeroImages(newImages);
+      await saveHeroImages(newImages);
+      setCustomUrl('');
+      showMsg('✅ Hero image URL added!');
+    } catch (e) {
+      showMsg('❌ Error: ' + e.message);
+    }
+  }
+
+  async function handleDelete(index) {
+    if (!window.confirm('Delete this Hero image?')) return;
+    try {
+      let newImages = heroImages.filter((_, i) => i !== index);
+      if (newImages.length === 0) newImages = [DEFAULT_HERO];
+      setHeroImages(newImages);
+      await saveHeroImages(newImages);
+      showMsg('🗑️ Hero image deleted');
+    } catch (e) {
+      showMsg('❌ Error: ' + e.message);
+    }
+  }
+
+  async function handleSetAsFirst(index) {
+    if (index === 0) return;
+    try {
+      const item = heroImages[index];
+      const newImages = [item, ...heroImages.filter((_, i) => i !== index)];
+      setHeroImages(newImages);
+      await saveHeroImages(newImages);
+      showMsg('⭐ Set as Primary Hero Image!');
+    } catch (e) {
+      showMsg('❌ Error: ' + e.message);
+    }
+  }
+
+  async function handleResetDefault() {
+    if (!window.confirm('Reset to Default AROMA LAB Hero Banner?')) return;
+    try {
+      const newImages = [DEFAULT_HERO];
+      setHeroImages(newImages);
+      await saveHeroImages(newImages);
+      showMsg('🔄 Reset to default hero image');
+    } catch (e) {
+      showMsg('❌ Error: ' + e.message);
+    }
+  }
+
+  if (loading) return <div className="adm-loading">Loading...</div>;
+
+  return (
+    <div>
+      <h3 className="adm-section-title">🖼️ Hero Banner Image ({heroImages.length})</h3>
+      <p className="adm-hint">මේ image එක main website එකේ මුල් පිටුවේ banner එක (Hero section) විදිහට පේනවා. එකකට වඩා දැම්මොත් slider එකක් විදිහට auto rotate වෙනවා.</p>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', alignItems: 'center', marginBottom: '25px', background: '#fff', padding: '16px', borderRadius: '10px', border: '1px solid #eee' }}>
+        <label className="adm-upload-label" style={{ marginBottom: 0 }}>
+          {uploading ? '⏳ Uploading...' : '📤 Upload New Hero Image'}
+          <input
+            type="file"
+            accept="image/*"
+            style={{ display: 'none' }}
+            disabled={uploading}
+            onChange={(e) => handleUpload(e.target.files[0])}
+          />
+        </label>
+
+        <div style={{ display: 'flex', gap: '8px', flex: 1, minWidth: '280px' }}>
+          <input
+            type="url"
+            placeholder="Or paste image URL (https://...)"
+            value={customUrl}
+            onChange={(e) => setCustomUrl(e.target.value)}
+            className="adm-input"
+            style={{ flex: 1 }}
+          />
+          <button onClick={handleAddUrl} className="adm-btn adm-btn-secondary">
+            ➕ Add URL
+          </button>
+        </div>
+
+        <button onClick={handleResetDefault} className="adm-btn" style={{ background: '#f5f5f5', color: '#666', border: '1px solid #ddd' }}>
+          🔄 Reset Default
+        </button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
+        {heroImages.map((img, i) => (
+          <div
+            key={i}
+            style={{
+              background: '#fff',
+              border: i === 0 ? '2px solid #0A2E1F' : '1px solid #eee',
+              borderRadius: '12px',
+              padding: '12px',
+              position: 'relative',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.04)'
+            }}
+          >
+            <div style={{ position: 'relative', overflow: 'hidden', borderRadius: '8px', height: '170px', background: '#f8f8f8' }}>
+              <img
+                src={img}
+                alt={`Hero ${i + 1}`}
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={(e) => { e.target.src = DEFAULT_HERO; }}
+              />
+              {i === 0 && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '8px',
+                    left: '8px',
+                    background: '#0A2E1F',
+                    color: '#fff',
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    letterSpacing: '0.5px'
+                  }}
+                >
+                  ⭐ PRIMARY BANNER
+                </span>
+              )}
+            </div>
+
+            <div style={{ marginTop: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '12px', color: '#777', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>
+                {img.substring(img.lastIndexOf('/') + 1) || `Image ${i + 1}`}
+              </span>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {i !== 0 && (
+                  <button
+                    onClick={() => handleSetAsFirst(i)}
+                    className="adm-btn"
+                    title="Set as First / Primary Image"
+                    style={{ padding: '6px 10px', fontSize: '11px', background: '#E8F5E9', color: '#2E7D32' }}
+                  >
+                    ⭐ Make 1st
+                  </button>
+                )}
+                <button
+                  onClick={() => handleDelete(i)}
+                  className="adm-btn adm-btn-delete"
+                  style={{ padding: '6px 10px', fontSize: '11px' }}
+                >
+                  🗑️ Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+  }
+// ============================================================
 // CONTENT — LIFESTYLE MANAGER
 // ============================================================
 
