@@ -4,7 +4,7 @@
  * Domain: admin.aromalabsl.lk
  *************************************************************/
 
-const { useState, useEffect } = React;
+var { useState, useEffect } = React;
 
 // ============================================================
 // PNL REPORT TAB
@@ -1460,12 +1460,26 @@ function AdminApp() {
   }
 
   useEffect(() => {
+    let mounted = true;
+    const safetyTimer = setTimeout(() => {
+      if (mounted) setAuthChecked(true);
+    }, 1200);
+
     async function check() {
-      const result = await checkAdminSession();
-      if (result.authenticated) {
-        setIsAuthenticated(true);
+      try {
+        const result = await checkAdminSession();
+        if (mounted && result && result.authenticated) {
+          setIsAuthenticated(true);
+        } else if (mounted) {
+          setIsAuthenticated(false);
+        }
+      } catch (err) {
+        console.warn('Session check warning:', err);
+        if (mounted) setIsAuthenticated(false);
+      } finally {
+        if (mounted) setAuthChecked(true);
+        clearTimeout(safetyTimer);
       }
-      setAuthChecked(true);
     }
     check();
 
@@ -1765,5 +1779,5 @@ function AdminApp() {
 // RENDER
 // ============================================================
 
-const root = ReactDOM.createRoot(document.getElementById('admin-root'));
+var root = ReactDOM.createRoot(document.getElementById('admin-root'));
 root.render(<AdminApp />);
