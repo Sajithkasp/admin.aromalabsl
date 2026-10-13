@@ -1469,6 +1469,7 @@ function AdminApp() {
   ];
 
   const contentTabs = [
+    { id: 'hero', label: '🖼️ Hero Banner' },
     { id: 'products', label: '📦 Products' },
     { id: 'categories', label: '🏷️ Categories' },
     { id: 'lifestyle', label: '📸 Lifestyle' },
@@ -1572,6 +1573,9 @@ function AdminApp() {
           </>
         )}
 
+                 {activeTab === 'hero' && (
+          <HeroManager showMsg={showMsg} />
+        )}
         {activeTab === 'pnl' && <PnLReportTab showMsg={showMsg} />}
         {activeTab === 'other-costs' && <OtherCostsTab showMsg={showMsg} />}
         {activeTab === 'commissions' && <CommissionsTab showMsg={showMsg} />}
