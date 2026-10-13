@@ -5,7 +5,7 @@
  * Domain: admin.aromalabsl.lk
  *************************************************************/
 
-const { useState, useEffect } = React;
+var { useState, useEffect } = React;
 
 // ============================================================
 // LOGIN SCREEN — Google Only
@@ -206,7 +206,7 @@ function OrdersList({ orders, status, onRefresh, showMsg, onSelectOrder }) {
                   showMsg('Error: ' + e.message);
                 }
               }}>
-                🗑️ Delete
+                🗑️ Delete Permanently
               </button>
             )}
           </div>
@@ -221,178 +221,184 @@ function OrdersList({ orders, status, onRefresh, showMsg, onSelectOrder }) {
 // ============================================================
 
 function OrderCompleteModal({ order, paymentMethods, onClose, onComplete }) {
-  const [orderType, setOrderType] = useState('Deliver');
-  const [paymentMethod, setPaymentMethod] = useState('');
+  const [orderType, setOrderType] = useState(order.order_type || 'Website');
+  const [paymentMethod, setPaymentMethod] = useState(order.payment_method || (paymentMethods[0]?.name || 'COD'));
   const [deliveryCharge, setDeliveryCharge] = useState(order.delivery_charge || 0);
   const [discount, setDiscount] = useState(order.discount || 0);
-  const [commission, setCommission] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [commission, setCommission] = useState(order.commission || 0);
   const [items, setItems] = useState([]);
   const [products, setProducts] = useState([]);
+  const [commissions, setCommissions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [showAddItem, setShowAddItem] = useState(false);
   const [newItem, setNewItem] = useState({ product_name: '', quantity: 1 });
 
-  const orderTypes = ['Deliver', 'In-Store'];
-  const availablePayments = paymentMethods && paymentMethods.length > 0
-    ? paymentMethods.map(p => p.name)
-    : ['Cash', 'Card', 'Online', 'KOKO', 'Bank', 'Daraz COD'];
+  const orderTypes = ['Website', 'Facebook', 'Instagram', 'WhatsApp', 'Direct', 'Other'];
+  const availablePayments = paymentMethods && paymentMethods.length ? paymentMethods.map(p => p.name) : ['COD', 'Bank Transfer', 'Card', 'Koko', 'Mintpay'];
 
   useEffect(() => {
-    async function load() {
+    async function init() {
       try {
-        const orderIdentifier = order.order_id || order.id;
-        const its = await dbGetOrderItems(orderIdentifier);
-        if (its && its.length > 0) {
-          setItems(its.map(it => ({
-            id: it.id,
+        const [rawItems, prods, comms] = await Promise.all([
+          dbGetOrderItems(order.order_id || order.id),
+          dbGetProducts(),
+          dbGetCommissions()
+        ]);
+        setProducts(prods);
+        setCommissions(comms);
+
+        if (rawItems && rawItems.length) {
+          setItems(rawItems.map(it => ({
             product_name: it.product_name,
             quantity: Number(it.quantity) || 1,
             unit_price: Number(it.unit_price) || 1500,
             unit_cost: Number(it.unit_cost) || 0
           })));
-        } else if (order.items && order.items.length > 0) {
-          setItems(order.items.map(it => ({
-            id: null,
-            product_name: it.name,
-            quantity: Number(it.quantity) || 1,
-            unit_price: Number(it.price) || 1500,
-            unit_cost: Number(it.cost) || 0
-          })));
-        }
-
-        const prods = await dbGetProducts();
-        setProducts(prods);
-        if (availablePayments.length > 0) {
-          setPaymentMethod(order.payment_method || availablePayments[0]);
+        } else if (order.order_items) {
+          const parsed = parseItemsString(order.order_items, prods);
+          setItems(parsed);
+        } else {
+          setItems([{ product_name: prods[0]?.name || 'Perfume', quantity: 1, unit_price: 1500, unit_cost: 0 }]);
         }
       } catch (e) {
         console.error(e);
       }
     }
-    load();
-  }, [order.order_id, order.id]);
+    init();
+  }, [order]);
 
-  function updateItemQty(idx, newQty) {
-    if (newQty < 1) return;
-    setItems(items.map((it, i) => i === idx ? { ...it, quantity: newQty } : it));
+  function parseItemsString(str, prods) {
+    if (!str) return [];
+    const parts = str.split(',').map(s => s.trim());
+    const parsed = [];
+    parts.forEach(p => {
+      const match = p.match(/^(.+?)\s*[xX]\s*(\d+)$/);
+      if (match) {
+        const name = match[1].trim();
+        const qty = Number(match[2]) || 1;
+        const prod = prods.find(pr => pr.name.toLowerCase() === name.toLowerCase());
+        parsed.push({
+          product_name: name,
+          quantity: qty,
+          unit_price: prod ? Number(prod.selling_price || prod.price) || 1500 : 1500,
+          unit_cost: prod ? Number(prod.total_cost || prod.full_cost) || 0 : 0
+        });
+      }
+    });
+    return parsed.length ? parsed : [{ product_name: prods[0]?.name || 'Perfume', quantity: 1, unit_price: 1500, unit_cost: 0 }];
+  }
+
+  function recalculateCommission(payMethod, total) {
+    const comm = commissions.find(c => c.method.toLowerCase() === (payMethod || '').toLowerCase());
+    if (comm) {
+      const calc = (total * Number(comm.rate) / 100) + Number(comm.fixed_fee || 0);
+      setCommission(Math.round(calc * 100) / 100);
+    }
+  }
+
+  const itemsTotal = items.reduce((s, it) => s + ((Number(it.unit_price) || 0) * (Number(it.quantity) || 1)), 0);
+  const deliveryNum = Number(deliveryCharge) || 0;
+  const discountNum = Number(discount) || 0;
+  const commissionNum = Number(commission) || 0;
+  const netTotal = itemsTotal + deliveryNum - discountNum;
+
+  const totalCost = items.reduce((s, it) => {
+    const prod = products.find(p => p.name.toLowerCase() === (it.product_name || '').toLowerCase());
+    const cost = prod ? (Number(prod.total_cost) || Number(prod.full_cost) || 0) : (Number(it.unit_cost) || 0);
+    return s + (cost * (Number(it.quantity) || 1));
+  }, 0);
+
+  const netProfit = netTotal - totalCost - commissionNum;
+
+  useEffect(() => {
+    recalculateCommission(paymentMethod, netTotal);
+  }, [paymentMethod, itemsTotal, deliveryCharge, discount]);
+
+  function updateItemQty(idx, qty) {
+    const updated = [...items];
+    updated[idx].quantity = Math.max(1, Number(qty) || 1);
+    setItems(updated);
+  }
+
+  function updateItemPrice(idx, price) {
+    const updated = [...items];
+    updated[idx].unit_price = Math.max(0, Number(price) || 0);
+    setItems(updated);
   }
 
   function removeItem(idx) {
-    if (!window.confirm('Remove this item?')) return;
+    if (items.length <= 1) {
+      setError('Order must have at least 1 item');
+      return;
+    }
     setItems(items.filter((_, i) => i !== idx));
   }
 
   function addNewItem() {
-    if (!newItem.product_name) {
-      alert('Select a product');
-      return;
-    }
-    const product = products.find(p => p.name === newItem.product_name);
-    const unitCost = product ? (Number(product.total_cost) || Number(product.full_cost) || 0) : 0;
-    const unitPrice = product ? (Number(product.selling_price) || Number(product.price) || 1500) : 1500;
-
+    if (!newItem.product_name) { setError('Select a product'); return; }
+    const prod = products.find(p => p.name === newItem.product_name);
     setItems([...items, {
-      id: null,
       product_name: newItem.product_name,
       quantity: Number(newItem.quantity) || 1,
-      unit_price: unitPrice,
-      unit_cost: unitCost
+      unit_price: prod ? Number(prod.selling_price || prod.price) || 1500 : 1500,
+      unit_cost: prod ? Number(prod.total_cost || prod.full_cost) || 0 : 0
     }]);
-
-    setNewItem({ product_name: '', quantity: 1 });
     setShowAddItem(false);
+    setNewItem({ product_name: '', quantity: 1 });
+    setError('');
   }
 
-  useEffect(() => {
-    async function calc() {
-      try {
-        const comms = await dbGetCommissions();
-        const comm = comms.find(c => String(c.method).toLowerCase() === String(paymentMethod).toLowerCase());
-        if (comm) {
-          const itemsTotal = items.reduce((s, it) => s + (it.unit_price * it.quantity), 0);
-          const netForComm = itemsTotal + Number(deliveryCharge) - Number(discount);
-          const c = (netForComm * Number(comm.rate) / 100) + Number(comm.fixed_fee || 0);
-          setCommission(Math.round(c * 100) / 100);
-        } else {
-          setCommission(0);
-        }
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    calc();
-  }, [paymentMethod, items, deliveryCharge, discount]);
-
   async function handleComplete() {
-    if (items.length === 0) {
-      setError('Order එකේ items අඩුම එකක්වත් තියෙන්න ඕන');
-      return;
-    }
+    if (!items.length) { setError('Order must have at least 1 item'); return; }
     setLoading(true);
     setError('');
     try {
       await completeOrder(order.order_id || order.id, {
         order_type: orderType,
         payment_method: paymentMethod,
-        delivery_charge: Number(deliveryCharge) || 0,
-        discount: Number(discount) || 0,
-        commission_override: Number(commission) || 0,
+        delivery_charge: deliveryNum,
+        discount: discountNum,
+        commission_override: commissionNum,
         updated_items: items
       });
       onComplete();
     } catch (e) {
       setError(e.message);
+      setLoading(false);
     }
-    setLoading(false);
   }
 
-  const itemsTotal = items.reduce((s, it) => s + (it.unit_price * it.quantity), 0);
-  const totalCost = items.reduce((s, it) => s + (it.unit_cost * it.quantity), 0);
-  const deliveryNum = Number(deliveryCharge) || 0;
-  const discountNum = Number(discount) || 0;
-  const commissionNum = Number(commission) || 0;
-  const netTotal = itemsTotal + deliveryNum - discountNum;
-  const netProfit = netTotal - totalCost - commissionNum;
-
   return (
-    <div className="adm-modal-overlay" onClick={onClose}>
-      <div className="adm-modal" onClick={(e) => e.stopPropagation()}>
+    <div className="adm-modal-overlay">
+      <div className="adm-modal-box">
         <div className="adm-modal-header">
-          <h3>Complete Order — {order.order_id || order.id}</h3>
-          <button className="adm-modal-close" onClick={onClose}>×</button>
+          <div>
+            <h3 className="adm-modal-title">Complete Order #{order.order_id || order.id}</h3>
+            <p className="adm-modal-sub">{order.customer_name} • {order.customer_phone}</p>
+          </div>
+          <button className="adm-modal-close" onClick={onClose}>✕</button>
         </div>
 
         <div className="adm-modal-body">
           <div className="adm-modal-section">
-            <div className="adm-modal-customer">
-              <p><strong>{order.customer_name}</strong></p>
-              <p>{order.customer_phone || ''} • {order.district || ''}</p>
-            </div>
-          </div>
-
-          <div className="adm-modal-section">
-            <label className="adm-modal-label">Order Items</label>
-            <div className="adm-items-edit-list">
-              {items.length === 0 ? (
-                <p className="adm-items-empty">No items — add at least one</p>
-              ) : (
-                items.map((it, idx) => (
-                  <div key={idx} className="adm-item-edit-row">
-                    <div className="adm-item-edit-name">
-                      <div className="adm-item-edit-title">{it.product_name}</div>
-                      <div className="adm-item-edit-price">{fmtRs(it.unit_price)} each</div>
-                    </div>
-                    <div className="adm-item-edit-qty">
-                      <button onClick={() => updateItemQty(idx, it.quantity - 1)}>−</button>
-                      <span>{it.quantity}</span>
-                      <button onClick={() => updateItemQty(idx, it.quantity + 1)}>+</button>
-                    </div>
-                    <div className="adm-item-edit-total">{fmtRs(it.unit_price * it.quantity)}</div>
-                    <button className="adm-item-edit-remove" onClick={() => removeItem(idx)}>✕</button>
+            <label className="adm-modal-label">Items</label>
+            <div className="adm-modal-items-list">
+              {items.map((it, idx) => (
+                <div key={idx} className="adm-modal-item-row">
+                  <span className="adm-modal-item-name">{it.product_name}</span>
+                  <div className="adm-modal-item-inputs">
+                    <input type="number" min="1" value={it.quantity}
+                      onChange={(e) => updateItemQty(idx, e.target.value)}
+                      className="adm-modal-input-qty" />
+                    <input type="number" value={it.unit_price}
+                      onChange={(e) => updateItemPrice(idx, e.target.value)}
+                      className="adm-modal-input-price" />
+                    <span className="adm-modal-item-total">{fmtRs((Number(it.unit_price) || 0) * (Number(it.quantity) || 1))}</span>
+                    <button className="adm-btn-remove-item" onClick={() => removeItem(idx)}>🗑️</button>
                   </div>
-                ))
-              )}
+                </div>
+              ))}
             </div>
 
             {!showAddItem ? (
@@ -486,4 +492,4 @@ function OrderCompleteModal({ order, paymentMethods, onClose, onComplete }) {
       </div>
     </div>
   );
-}
+                  }
