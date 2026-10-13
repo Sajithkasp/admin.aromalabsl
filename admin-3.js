@@ -1573,9 +1573,7 @@ function AdminApp() {
           </>
         )}
 
-                 {activeTab === 'hero' && (
-          <HeroManager showMsg={showMsg} />
-        )}
+                 
         {activeTab === 'pnl' && <PnLReportTab showMsg={showMsg} />}
         {activeTab === 'other-costs' && <OtherCostsTab showMsg={showMsg} />}
         {activeTab === 'commissions' && <CommissionsTab showMsg={showMsg} />}
@@ -1611,6 +1609,9 @@ function AdminApp() {
             showMsg={showMsg}
             placeholder="New category..."
           />
+        )}
+         {activeTab === 'hero' && (
+          <HeroManager showMsg={showMsg} />
         )}
         {activeTab === 'lifestyle' && (
           <LifestyleManager showMsg={showMsg} />
